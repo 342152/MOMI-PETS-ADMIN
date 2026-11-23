@@ -1,5 +1,5 @@
 
-name: Build MOMI PETS ADMIN APK
+name: MOMI PETS ADMIN APK Build
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build MOMI PETS ADMIN
     runs-on: ubuntu-latest
 
     steps:
@@ -36,27 +36,82 @@ jobs:
           gradle-version: '8.7'
 
       - name: Check Android Project
-        working-directory: android-admin
+        shell: bash
         run: |
           set -e
-          echo "Checking Android project files..."
+          echo "Checking Android project..."
+
+          if [ ! -d "android-admin" ]; then
+            echo "::error::android-admin folder not found"
+            ls -la
+            exit 1
+          fi
+
+          cd android-admin
 
           test -f settings.gradle.kts || test -f settings.gradle
           test -f build.gradle.kts || test -f build.gradle
           test -d app
           test -f app/build.gradle.kts || test -f app/build.gradle
 
-          echo "Project files found."
+          echo "Android project files found."
 
-      - name: Check Firebase File
-        working-directory: android-admin
+      - name: Locate Firebase Configuration
+        shell: bash
         run: |
-          if [ ! -f app/google-services.json ]; then
-            echo "::error::app/google-services.json is missing"
-            exit 1
+          set -e
+
+          TARGET="android-admin/app/google-services.json"
+
+          if [ -f "$TARGET" ]; then
+            echo "Firebase file already exists at correct location."
+          else
+            echo "Searching repository for google-services.json..."
+
+            SOURCE=$(find . -type f -name "google-services.json" \
+              -not -path "./.git/*" | head -n 1)
+
+            if [ -z "$SOURCE" ]; then
+              echo "::error::google-services.json was not found anywhere in repository."
+              exit 1
+            fi
+
+            mkdir -p android-admin/app
+            cp "$SOURCE" "$TARGET"
+            echo "Firebase file copied to Android app folder."
           fi
 
-          echo "Firebase configuration found."
+          python3 - <<'PY'
+          import json
+          path = "android-admin/app/google-services.json"
+          with open(path, encoding="utf-8") as f:
+              data = json.load(f)
+
+          project = data.get("project_info", {}).get("project_id")
+          clients = data.get("client", [])
+
+          expected_project = "thinking-country-mx6pd"
+          expected_package = "com.momipets.admin"
+
+          if project != expected_project:
+              raise SystemExit(
+                  f"Wrong Firebase project: {project}"
+              )
+
+          packages = [
+              c.get("client_info", {})
+               .get("android_client_info", {})
+               .get("package_name")
+              for c in clients
+          ]
+
+          if expected_package not in packages:
+              raise SystemExit(
+                  f"Package {expected_package} not found in Firebase file. Found: {packages}"
+              )
+
+          print("Firebase project and Android package verified.")
+          PY
 
       - name: Build Debug APK
         working-directory: android-admin
@@ -64,9 +119,16 @@ jobs:
           gradle --no-daemon --stacktrace assembleDebug
 
       - name: Verify APK
+        shell: bash
         run: |
           APK="android-admin/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
+
+          if [ ! -f "$APK" ]; then
+            echo "::error::APK was not generated."
+            find android-admin/app/build/outputs -type f || true
+            exit 1
+          fi
+
           echo "APK successfully generated."
 
       - name: Upload APK
