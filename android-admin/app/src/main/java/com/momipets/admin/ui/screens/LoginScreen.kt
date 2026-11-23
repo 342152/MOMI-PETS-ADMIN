@@ -1,7 +1,6 @@
 
 package com.momipets.admin.ui.screens
 
-import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.momipets.admin.data.FirebaseAdminRepository
@@ -41,49 +41,61 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
 
-        if (result.resultCode != Activity.RESULT_OK) {
-            isLoading = false
-            errorMessage = "Google Sign-In cancelled or failed. Please try again."
-            return@rememberLauncherForActivityResult
-        }
+        // Do not immediately discard cancelled results.
+        // Google may return useful error information in the Intent.
 
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        val signInTask =
+            GoogleSignIn.getSignedInAccountFromIntent(result.data)
 
         scope.launch {
             try {
 
-                // Get Google account
+                // 1. Get Google account
                 val account = try {
-                    task.getResult(ApiException::class.java)
+                    signInTask.getResult(ApiException::class.java)
                 } catch (e: ApiException) {
+
+                    val statusText =
+                        GoogleSignInStatusCodes.getStatusCodeString(
+                            e.statusCode
+                        )
+
                     throw Exception(
-                        "Google Sign-In Error: ${e.statusCode} - ${e.localizedMessage}"
+                        "Google Sign-In Failed\n" +
+                        "Status Code: ${e.statusCode}\n" +
+                        "Status: $statusText\n" +
+                        "Result Code: ${result.resultCode}"
                     )
                 }
 
-                // Check Google ID Token
+                // 2. Check ID Token
                 val idToken = account.idToken
                     ?: throw Exception(
-                        "Google ID Token is NULL. Check Web Client ID and SHA-1 in Firebase."
+                        "Google ID Token is NULL.\n" +
+                        "Check Firebase Web Client ID and SHA-1."
                     )
 
-                // Create Firebase credential
-                val credential = GoogleAuthProvider.getCredential(
-                    idToken,
-                    null
-                )
+                // 3. Create Firebase credential
+                val credential =
+                    GoogleAuthProvider.getCredential(
+                        idToken,
+                        null
+                    )
 
-                // Firebase authentication
-                val authResult = FirebaseAdminRepository.auth
-                    .signInWithCredential(credential)
-                    .await()
+                // 4. Firebase authentication
+                val authResult =
+                    FirebaseAdminRepository.auth
+                        .signInWithCredential(credential)
+                        .await()
 
                 val user = authResult.user
-                    ?: throw Exception("Firebase returned an empty user.")
+                    ?: throw Exception(
+                        "Firebase authentication returned no user."
+                    )
 
-                // Check owner authorization
-                val authorized = FirebaseAdminRepository
-                    .verifyOwnerAccess(user)
+                // 5. Verify owner access
+                val authorized =
+                    FirebaseAdminRepository.verifyOwnerAccess(user)
 
                 if (authorized) {
 
@@ -95,17 +107,20 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                     FirebaseAdminRepository.signOut()
 
                     errorMessage =
-                        "Access Denied: ${user.email}\n\nThis Google account is not authorized as the store owner."
+                        "ACCESS DENIED\n\n" +
+                        "Google Account: ${user.email}\n\n" +
+                        "This account is not authorized as MOMI PETS owner."
                 }
 
             } catch (e: Exception) {
 
-                FirebaseAdminRepository.signOut()
-
                 errorMessage =
-                    "LOGIN FAILED:\n${e.localizedMessage ?: e.javaClass.simpleName}"
+                    "LOGIN FAILED\n\n" +
+                    "${e.javaClass.simpleName}\n\n" +
+                    "${e.localizedMessage ?: "Unknown authentication error"}"
 
             } finally {
+
                 isLoading = false
             }
         }
@@ -141,9 +156,11 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.size(60.dp)
                 ) {
+
                     Box(
                         contentAlignment = Alignment.Center
                     ) {
+
                         Icon(
                             imageVector = Icons.Default.Pets,
                             contentDescription = "MOMI PETS ADMIN",
@@ -167,6 +184,7 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
 
+                // Error message
                 if (errorMessage != null) {
 
                     Surface(
@@ -174,6 +192,7 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
+
                         Text(
                             text = errorMessage!!,
                             color = AlertRed,
@@ -183,6 +202,7 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                     }
                 }
 
+                // Google Sign-In button
                 Button(
                     onClick = {
 
@@ -203,7 +223,8 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                                 isLoading = false
 
                                 errorMessage =
-                                    "Missing default_web_client_id. Check google-services.json and rebuild the app."
+                                    "MISSING WEB CLIENT ID\n\n" +
+                                    "Check google-services.json in the app folder."
 
                                 return@Button
                             }
@@ -216,7 +237,7 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                                 isLoading = false
 
                                 errorMessage =
-                                    "Web Client ID is empty. Check Firebase OAuth configuration."
+                                    "Firebase Web Client ID is empty."
 
                                 return@Button
                             }
@@ -229,24 +250,34 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                                     .requestEmail()
                                     .build()
 
-                            val client =
-                                GoogleSignIn.getClient(context, gso)
+                            val googleClient =
+                                GoogleSignIn.getClient(
+                                    context,
+                                    gso
+                                )
 
-                            launcher.launch(client.signInIntent)
+                            launcher.launch(
+                                googleClient.signInIntent
+                            )
 
                         } catch (e: Exception) {
 
                             isLoading = false
 
                             errorMessage =
-                                "SIGN-IN START ERROR:\n${e.localizedMessage}"
+                                "SIGN-IN START ERROR\n\n" +
+                                "${e.localizedMessage ?: e.javaClass.simpleName}"
                         }
                     },
+
                     enabled = !isLoading,
+
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
+
                     shape = RoundedCornerShape(10.dp),
+
                     colors = ButtonDefaults.buttonColors(
                         containerColor = ForestDark
                     )
@@ -268,9 +299,13 @@ fun LoginScreen(onAuthenticated: () -> Unit) {
                             modifier = Modifier.size(18.dp)
                         )
 
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(
+                            Modifier.width(8.dp)
+                        )
 
-                        Text("Sign In as Authorized Owner")
+                        Text(
+                            "Sign In as Authorized Owner"
+                        )
                     }
                 }
             }
