@@ -1,3 +1,4 @@
+
 package com.momipets.admin
 
 import android.os.Bundle
@@ -18,8 +19,12 @@ import com.momipets.admin.data.FirebaseAdminRepository
 import com.momipets.admin.ui.screens.*
 import com.momipets.admin.ui.theme.ForestDark
 import com.momipets.admin.ui.theme.MomiPetsAdminTheme
+import kotlinx.coroutines.launch
 
-private enum class AdminTab(val label: String, val icon: ImageVector) {
+private enum class AdminTab(
+    val label: String,
+    val icon: ImageVector
+) {
     Dashboard("Home", Icons.Default.Home),
     Orders("Orders", Icons.Default.ShoppingCart),
     Products("Products", Icons.Default.Inventory2),
@@ -29,30 +34,93 @@ private enum class AdminTab(val label: String, val icon: ImageVector) {
 }
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContent {
             MomiPetsAdminTheme {
-                var isAuthorized by remember { mutableStateOf(false) }
-                var checkedInitialAuth by remember { mutableStateOf(false) }
+
+                var isAuthorized by remember {
+                    mutableStateOf(false)
+                }
+
+                var checkedInitialAuth by remember {
+                    mutableStateOf(false)
+                }
+
+                var authError by remember {
+                    mutableStateOf<String?>(null)
+                }
 
                 LaunchedEffect(Unit) {
-                    val user = FirebaseAdminRepository.auth.currentUser
-                    isAuthorized = if (user != null) {
-                        FirebaseAdminRepository.verifyOwnerAccess(user)
-                    } else false
-                    checkedInitialAuth = true
+                    try {
+                        val user = FirebaseAdminRepository.auth.currentUser
+
+                        isAuthorized = if (user != null) {
+                            FirebaseAdminRepository.verifyOwnerAccess(user)
+                        } else {
+                            false
+                        }
+
+                        if (user != null && !isAuthorized) {
+                            authError = "This Google account is not authorized as an admin."
+                        }
+
+                    } catch (e: Exception) {
+                        isAuthorized = false
+                        authError = e.localizedMessage
+                            ?: "Firebase authentication failed."
+                    } finally {
+                        checkedInitialAuth = true
+                    }
                 }
 
                 if (!checkedInitialAuth) {
-                    Box(modifier = Modifier.fillMaxSize())
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                    )
                 } else if (!isAuthorized) {
-                    LoginScreen(onAuthenticated = { isAuthorized = true })
+
+                    LoginScreen(
+                        onAuthenticated = {
+                            isAuthorized = true
+                            authError = null
+                        }
+                    )
+
+                    authError?.let { message ->
+                        AlertDialog(
+                            onDismissRequest = {
+                                authError = null
+                            },
+                            title = {
+                                Text("Login Verification")
+                            },
+                            text = {
+                                Text(message)
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        authError = null
+                                    }
+                                ) {
+                                    Text("OK")
+                                }
+                            }
+                        )
+                    }
+
                 } else {
-                    AdminShell(onSignOut = {
-                        FirebaseAdminRepository.signOut()
-                        isAuthorized = false
-                    })
+
+                    AdminShell(
+                        onSignOut = {
+                            FirebaseAdminRepository.signOut()
+                            isAuthorized = false
+                            authError = null
+                        }
+                    )
                 }
             }
         }
@@ -61,64 +129,187 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AdminShell(onSignOut: () -> Unit) {
-    var currentTab by remember { mutableStateOf(AdminTab.Dashboard) }
+private fun AdminShell(
+    onSignOut: () -> Unit
+) {
 
-    val orders by FirebaseAdminRepository.observeOrders().collectAsState(initial = emptyList())
-    val products by FirebaseAdminRepository.observeProducts().collectAsState(initial = emptyList())
-    val categories by FirebaseAdminRepository.observeCategories().collectAsState(initial = emptyList())
-    val suppliers by FirebaseAdminRepository.observeSuppliers().collectAsState(initial = emptyList())
-    val payments by FirebaseAdminRepository.observePayments().collectAsState(initial = emptyList())
-    val commissions by FirebaseAdminRepository.observeCommissions().collectAsState(initial = emptyList())
-    val notifications by FirebaseAdminRepository.observeNotifications().collectAsState(initial = emptyList())
-    val settings by FirebaseAdminRepository.observeWebsiteSettings().collectAsState(initial = AdminWebsiteSettings())
-    val banners by FirebaseAdminRepository.observeBanners().collectAsState(initial = emptyList())
+    var currentTab by remember {
+        mutableStateOf(AdminTab.Dashboard)
+    }
+
+    val orders by FirebaseAdminRepository
+        .observeOrders()
+        .collectAsState(initial = emptyList())
+
+    val products by FirebaseAdminRepository
+        .observeProducts()
+        .collectAsState(initial = emptyList())
+
+    val categories by FirebaseAdminRepository
+        .observeCategories()
+        .collectAsState(initial = emptyList())
+
+    val suppliers by FirebaseAdminRepository
+        .observeSuppliers()
+        .collectAsState(initial = emptyList())
+
+    val payments by FirebaseAdminRepository
+        .observePayments()
+        .collectAsState(initial = emptyList())
+
+    val commissions by FirebaseAdminRepository
+        .observeCommissions()
+        .collectAsState(initial = emptyList())
+
+    val notifications by FirebaseAdminRepository
+        .observeNotifications()
+        .collectAsState(initial = emptyList())
+
+    val settings by FirebaseAdminRepository
+        .observeWebsiteSettings()
+        .collectAsState(
+            initial = AdminWebsiteSettings()
+        )
+
+    val banners by FirebaseAdminRepository
+        .observeBanners()
+        .collectAsState(initial = emptyList())
 
     val uriHandler = LocalUriHandler.current
-    val waDigits = settings.whatsappNumber.replace(Regex("[^0-9]"), "").let {
-        if (it.startsWith("0")) "92${it.drop(1)}" else it
-    }.ifBlank { "923363958385" }
+
+    val waDigits = settings.whatsappNumber
+        .replace(Regex("[^0-9]"), "")
+        .let {
+            if (it.startsWith("0")) {
+                "92${it.drop(1)}"
+            } else {
+                it
+            }
+        }
+        .ifBlank {
+            "923363958385"
+        }
 
     Scaffold(
+
         topBar = {
             TopAppBar(
-                title = { Text("MOMI PETS ADMIN") },
+
+                title = {
+                    Text("MOMI PETS ADMIN")
+                },
+
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = ForestDark,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
+
                 actions = {
-                    IconButton(onClick = { uriHandler.openUri("https://wa.me/$waDigits") }) {
-                        Icon(Icons.Default.Chat, contentDescription = "WhatsApp Support (03363958385)")
+
+                    IconButton(
+                        onClick = {
+                            uriHandler.openUri(
+                                "https://wa.me/$waDigits"
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Chat,
+                            contentDescription = "WhatsApp Support"
+                        )
                     }
-                    IconButton(onClick = onSignOut) {
-                        Icon(Icons.Default.Logout, contentDescription = "Sign Out")
+
+                    IconButton(
+                        onClick = onSignOut
+                    ) {
+                        Icon(
+                            Icons.Default.Logout,
+                            contentDescription = "Sign Out"
+                        )
                     }
                 }
             )
         },
+
         bottomBar = {
             NavigationBar {
+
                 AdminTab.entries.forEach { tab ->
+
                     NavigationBarItem(
+
                         selected = currentTab == tab,
-                        onClick = { currentTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+
+                        onClick = {
+                            currentTab = tab
+                        },
+
+                        icon = {
+                            Icon(
+                                tab.icon,
+                                contentDescription = tab.label
+                            )
+                        },
+
+                        label = {
+                            Text(tab.label)
+                        }
                     )
                 }
             }
         }
+
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+
+        Box(
+            modifier = Modifier.padding(padding)
+        ) {
+
             when (currentTab) {
-                AdminTab.Dashboard -> DashboardScreen(orders, commissions, payments, notifications)
-                AdminTab.Orders -> OrdersScreen(orders)
-                AdminTab.Products -> ProductsScreen(products, categories, suppliers)
-                AdminTab.Suppliers -> SuppliersScreen(suppliers, payments)
-                AdminTab.Profits -> ProfitsScreen(orders, commissions, suppliers)
-                AdminTab.Website -> WebsiteSettingsScreen(settings, banners)
+
+                AdminTab.Dashboard -> {
+                    DashboardScreen(
+                        orders,
+                        commissions,
+                        payments,
+                        notifications
+                    )
+                }
+
+                AdminTab.Orders -> {
+                    OrdersScreen(orders)
+                }
+
+                AdminTab.Products -> {
+                    ProductsScreen(
+                        products,
+                        categories,
+                        suppliers
+                    )
+                }
+
+                AdminTab.Suppliers -> {
+                    SuppliersScreen(
+                        suppliers,
+                        payments
+                    )
+                }
+
+                AdminTab.Profits -> {
+                    ProfitsScreen(
+                        orders,
+                        commissions,
+                        suppliers
+                    )
+                }
+
+                AdminTab.Website -> {
+                    WebsiteSettingsScreen(
+                        settings,
+                        banners
+                    )
+                }
             }
         }
     }
