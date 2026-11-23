@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "328190983153",
+    "project_id": "thinking-country-mx6pd",
+    "storage_bucket": "thinking-country-mx6pd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:328190983153:android:a900657888c309c9302250",
+        "android_client_info": {
+          "package_name": "com.momipets.admin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "328190983153-2sinnbma3d9grnlgtbq9r0c6iefs6d9q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCx4B2PKa2UVFz07LdEfLcaFxk5kTaQ3w8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "328190983153-2sinnbma3d9grnlgtbq9r0c6iefs6d9q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
