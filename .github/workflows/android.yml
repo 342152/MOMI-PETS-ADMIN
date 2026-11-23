@@ -1,5 +1,5 @@
 
-name: MOMI PETS ADMIN APK Build
+name: MOMI PETS ADMIN - APK Build
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build MOMI PETS ADMIN
+    name: Build APK and Generate SHA1
     runs-on: ubuntu-latest
 
     steps:
@@ -30,87 +30,64 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
+      - name: Setup Stable Debug Keystore
+        run: |
+          mkdir -p ~/.android
+
+      - name: Restore Stable Debug Keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: momi-pets-debug-keystore-v1
+
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
 
       - name: Check Android Project
-        shell: bash
+        working-directory: android-admin
         run: |
           set -e
-          echo "Checking Android project..."
-
-          if [ ! -d "android-admin" ]; then
-            echo "::error::android-admin folder not found"
-            ls -la
-            exit 1
-          fi
-
-          cd android-admin
-
           test -f settings.gradle.kts || test -f settings.gradle
           test -f build.gradle.kts || test -f build.gradle
-          test -d app
           test -f app/build.gradle.kts || test -f app/build.gradle
+          echo "Android project verified."
 
-          echo "Android project files found."
-
-      - name: Locate Firebase Configuration
-        shell: bash
+      - name: Verify Firebase Configuration
         run: |
           set -e
+          FILE="android-admin/app/google-services.json"
 
-          TARGET="android-admin/app/google-services.json"
-
-          if [ -f "$TARGET" ]; then
-            echo "Firebase file already exists at correct location."
-          else
-            echo "Searching repository for google-services.json..."
-
-            SOURCE=$(find . -type f -name "google-services.json" \
-              -not -path "./.git/*" | head -n 1)
-
-            if [ -z "$SOURCE" ]; then
-              echo "::error::google-services.json was not found anywhere in repository."
-              exit 1
-            fi
-
-            mkdir -p android-admin/app
-            cp "$SOURCE" "$TARGET"
-            echo "Firebase file copied to Android app folder."
+          if [ ! -f "$FILE" ]; then
+            echo "::error::google-services.json missing"
+            exit 1
           fi
 
           python3 - <<'PY'
           import json
+
           path = "android-admin/app/google-services.json"
+
           with open(path, encoding="utf-8") as f:
               data = json.load(f)
 
-          project = data.get("project_info", {}).get("project_id")
-          clients = data.get("client", [])
-
-          expected_project = "thinking-country-mx6pd"
-          expected_package = "com.momipets.admin"
-
-          if project != expected_project:
-              raise SystemExit(
-                  f"Wrong Firebase project: {project}"
-              )
+          project = data["project_info"]["project_id"]
 
           packages = [
               c.get("client_info", {})
                .get("android_client_info", {})
                .get("package_name")
-              for c in clients
+              for c in data.get("client", [])
           ]
 
-          if expected_package not in packages:
-              raise SystemExit(
-                  f"Package {expected_package} not found in Firebase file. Found: {packages}"
-              )
+          if project != "thinking-country-mx6pd":
+              raise SystemExit("Wrong Firebase Project ID")
 
-          print("Firebase project and Android package verified.")
+          if "com.momipets.admin" not in packages:
+              raise SystemExit("Wrong Android Package Name")
+
+          print("Firebase configuration verified.")
           PY
 
       - name: Build Debug APK
@@ -118,23 +95,31 @@ jobs:
         run: |
           gradle --no-daemon --stacktrace assembleDebug
 
-      - name: Verify APK
-        shell: bash
+      - name: Generate SHA1 Fingerprint
+        working-directory: android-admin
         run: |
-          APK="android-admin/app/build/outputs/apk/debug/app-debug.apk"
+          gradle --no-daemon signingReport | tee signing-report.txt
 
-          if [ ! -f "$APK" ]; then
-            echo "::error::APK was not generated."
-            find android-admin/app/build/outputs -type f || true
-            exit 1
-          fi
+          echo "=================================="
+          echo "MOMI PETS ADMIN DEBUG SHA1"
+          echo "=================================="
 
-          echo "APK successfully generated."
+          grep -A 8 "Variant: debug" signing-report.txt || true
+
+          echo "Full report saved."
+
+      - name: Upload SHA1 Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: MOMI-PETS-SHA1-REPORT
+          path: android-admin/signing-report.txt
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MOMI-PETS-ADMIN-APK
-          path: android-admin/app/build/outputs/apk/debug/app-debug.apk
+          path: android-admin/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
