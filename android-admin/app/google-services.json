@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "328190983153-7eodr4tq96lasb39mgsggduhbq16p6kv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.momipets.admin",
+            "certificate_hash": "d35c624634ca364f65b2729659b321c5a2a11c77"
+          }
+        },
+        {
           "client_id": "328190983153-2sinnbma3d9grnlgtbq9r0c6iefs6d9q.apps.googleusercontent.com",
           "client_type": 3
         }
