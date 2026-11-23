@@ -30,11 +30,7 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Setup Stable Debug Keystore
-        run: |
-          mkdir -p ~/.android
-
-      - name: Restore Stable Debug Keystore
+      - name: Restore Debug Keystore
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
@@ -60,34 +56,53 @@ jobs:
           FILE="android-admin/app/google-services.json"
 
           if [ ! -f "$FILE" ]; then
-            echo "::error::google-services.json missing"
+            echo "::error::google-services.json is missing"
             exit 1
           fi
 
           python3 - <<'PY'
           import json
+          import sys
 
           path = "android-admin/app/google-services.json"
 
-          with open(path, encoding="utf-8") as f:
-              data = json.load(f)
+          try:
+              with open(path, encoding="utf-8") as f:
+                  data = json.load(f)
+          except json.JSONDecodeError as e:
+              print("FIREBASE JSON FILE IS INVALID")
+              print(f"File: {path}")
+              print(f"Error: {e.msg}")
+              print(f"Line: {e.lineno}")
+              print(f"Column: {e.colno}")
+              print("Please replace this file with a fresh Firebase download.")
+              sys.exit(1)
 
-          project = data["project_info"]["project_id"]
-
-          packages = [
-              c.get("client_info", {})
-               .get("android_client_info", {})
-               .get("package_name")
-              for c in data.get("client", [])
-          ]
+          try:
+              project = data["project_info"]["project_id"]
+              packages = [
+                  c.get("client_info", {})
+                   .get("android_client_info", {})
+                   .get("package_name")
+                  for c in data.get("client", [])
+              ]
+          except (KeyError, TypeError):
+              print("Firebase JSON structure is incomplete.")
+              sys.exit(1)
 
           if project != "thinking-country-mx6pd":
-              raise SystemExit("Wrong Firebase Project ID")
+              print("Wrong Firebase Project ID:", project)
+              sys.exit(1)
 
           if "com.momipets.admin" not in packages:
-              raise SystemExit("Wrong Android Package Name")
+              print("Wrong Android package name.")
+              print("Expected: com.momipets.admin")
+              print("Found:", packages)
+              sys.exit(1)
 
-          print("Firebase configuration verified.")
+          print("Firebase JSON is valid.")
+          print("Firebase Project:", project)
+          print("Android Package: com.momipets.admin")
           PY
 
       - name: Build Debug APK
@@ -95,18 +110,17 @@ jobs:
         run: |
           gradle --no-daemon --stacktrace assembleDebug
 
-      - name: Generate SHA1 Fingerprint
+      - name: Generate SHA1 and SHA256
         working-directory: android-admin
         run: |
+          set -e
           gradle --no-daemon signingReport | tee signing-report.txt
 
-          echo "=================================="
-          echo "MOMI PETS ADMIN DEBUG SHA1"
-          echo "=================================="
+          echo "===================================="
+          echo "MOMI PETS ADMIN FINGERPRINT REPORT"
+          echo "===================================="
 
-          grep -A 8 "Variant: debug" signing-report.txt || true
-
-          echo "Full report saved."
+          grep -A 12 "Variant: debug" signing-report.txt || true
 
       - name: Upload SHA1 Report
         uses: actions/upload-artifact@v4
